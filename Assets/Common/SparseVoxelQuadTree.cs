@@ -27,7 +27,7 @@ namespace Assets.QuadTree
         }
     }
 
-    public class SparseVoxelQuadTree<T>
+    public partial class SparseVoxelQuadTree<T>
     {
         SparseVoxelQuadTree<T>[] ChildNodes;
         Rect[] ChildRects;
@@ -39,13 +39,14 @@ namespace Assets.QuadTree
         public SparseVoxelQuadTree(Rect rect, int maxDepth)
         {
             Rect = rect;
-            ChildNodes = new SparseVoxelQuadTree<T>[4];
+            
             DataList = new List<T>();
             DataRectList = new List<Rect>();
             Level = maxDepth; // the maximum depth of this tree, 0 means this is a leaf node
 
             if (Level > 0)
             {
+                ChildNodes = new SparseVoxelQuadTree<T>[4];
                 ChildRects = new Rect[4];
                 float x = Rect.xMin;
                 float y = Rect.yMin;
@@ -58,6 +59,7 @@ namespace Assets.QuadTree
             }
             else
             {
+                ChildNodes = new SparseVoxelQuadTree<T>[0];
                 ChildRects = new Rect[0];
             }
         }
@@ -222,6 +224,84 @@ namespace Assets.QuadTree
             }
             // if target rect contains this rect, then get all the data of this entire subtree
             data.AddRange(GetAllData()); 
+        }
+
+        // ========================= for image data ==============================
+        public void Insert(Vector2 point, T data, Action<List<T>> mergerCallback)
+        {
+            if (mergerCallback == null)
+            {
+                Debug.LogError("mergerCallback can not be null");
+                return;
+            }
+            if (!Rect.Contains(point))
+            {
+                Debug.LogError("Out of bound"); 
+                return;
+            }
+            _Insert(point, data, mergerCallback);
+        }
+
+        // recursive insert a point data
+        private void _Insert(Vector2 point, T data, Action<List<T>> mergeCallback)
+        {
+            if (Level != 0)
+            {
+                for (int i = 0; i < ChildRects.Length; ++i)
+                {
+                    if (ChildRects[i].Contains(point))
+                    {
+                        if (ChildNodes[i] == null)
+                            ChildNodes[i] = new SparseVoxelQuadTree<T>(ChildRects[i], Level - 1);
+
+                        var node = ChildNodes[i];
+                        // if this child was already a leaf node before insertion then end inserting
+                        if (node.ChildNodes == null)
+                            return;
+
+                        // try to insert the data recursively
+                        node._Insert(point, data, mergeCallback);
+
+                        // after insertion, if this child become to a leaf node
+                        if (node.ChildNodes == null)
+                        {
+                            // add the leaf data to current DataList
+                            DataList.Add(node.DataList[0]);
+                            // if all children are leaf nodes
+                            if (DataList.Count >= 4)
+                            {
+                                // then try merge children data into one
+                                mergeCallback(DataList);
+                                // if merge succeeded, turn this node into a leaf node
+                                if (DataList.Count == 1)
+                                    ChildNodes = null;
+                            }
+                        }
+                        return;
+                    }
+                }
+            }
+
+            // Executed when this is a max depth node (the smallest voxel)
+            DataList.Add(data);
+            // turn this node into a leaf node
+            ChildNodes = null; 
+        }
+
+        public void IterateLeafNode(Action<SparseVoxelQuadTree<T>> callback)
+        {
+            if (ChildNodes == null)
+            {
+                callback(this);
+
+            }
+            else
+            {
+                foreach (var child in ChildNodes)
+                {
+                    child?.IterateLeafNode(callback);
+                }
+            }
         }
     }
 }
